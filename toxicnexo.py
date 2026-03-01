@@ -1,3 +1,9 @@
+# কোডের শুরুতে এটি নিশ্চিত করুন
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
+# বট ক্লায়েন্ট ডিক্লেয়ার করার সময় লুপটি ধরিয়ে দিন
+bot = TelegramClient('bot_session', API_ID, API_HASH, loop=loop).start(bot_token=BOT_TOKEN)
 import os
 import asyncio
 from flask import Flask
