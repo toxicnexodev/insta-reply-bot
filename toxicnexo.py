@@ -80,4 +80,27 @@ class ToxicNexoBot:
 if __name__ == '__main__':
     bot = ToxicNexoBot()
     asyncio.run(bot.run())
-      
+
+
+import os
+from flask import Flask
+from threading import Thread
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "I am alive!"
+
+def run():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+
+if __name__ == "__main__":
+    keep_alive()
+    # এখানে আপনার বটের আসল কোড শুরু হবে (যেমন: client.run_until_disconnected())
+    
